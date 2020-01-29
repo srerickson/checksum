@@ -27,10 +27,13 @@ import (
 	"sync"
 )
 
-// Config holds config options for both Walk and Pool
-type Config struct {
-	poolSize int // number of goroutines in pool
-	ctx      context.Context
+// Pipe is the core object
+type Pipe struct {
+	out    chan Job // Job results
+	in     chan Job // jop input
+	wg     sync.WaitGroup
+	numGos int // number of goroutines in pool
+	ctx    context.Context
 }
 
 // Job is value streamed to/from Walk and Pool
@@ -38,11 +41,11 @@ type Job struct {
 	Path    string           // path to file
 	HashNew func() hash.Hash // hash constructor function
 	Valid   []byte           // expected checksum (for validation)
-	sum     []byte           // checksum result
-	err     error            // any encountered errors
+	Sum     []byte           // checksum result
+	Err     error            // any encountered errors
 }
 
-// Sum hashes a file a path using hash returned by hashNew
+// Sum hashes a file path using hash returned by hashNew
 func Sum(path string, hashNew func() hash.Hash) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -57,110 +60,117 @@ func Sum(path string, hashNew func() hash.Hash) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-// Sum returns job's checksum
-func (j Job) Sum() []byte {
-	return j.sum
-}
-
 // SumString returns job's checksum as a hex encoded string
 func (j Job) SumString() string {
-	return hex.EncodeToString(j.sum)
-}
-
-// Err returns the error associated with the job (if any)
-func (j Job) Err() error {
-	return j.err
+	return hex.EncodeToString(j.Sum)
 }
 
 // IsValid returns whether the job's checksum matches expected value
 func (j Job) IsValid() bool {
-	return j.sum != nil && bytes.Equal(j.sum, j.Valid)
-}
-
-// default configs for Pool and Walk
-func defaultConfig() *Config {
-	return &Config{
-		poolSize: runtime.GOMAXPROCS(0),
-		ctx:      context.Background(),
-	}
+	return j.Sum != nil && bytes.Equal(j.Sum, j.Valid)
 }
 
 // WithContext is used to add a Context to Walk and Pool
-func WithContext(ctx context.Context) func(*Config) {
-	return func(c *Config) {
-		c.ctx = ctx
+func WithContext(ctx context.Context) func(*Pipe) {
+	return func(p *Pipe) {
+		p.ctx = ctx
 	}
 }
 
-// WithPoolSize is used set the number of goroutines in the Pool
-func WithPoolSize(size int) func(*Config) {
-	return func(c *Config) {
-		if size < 1 {
-			size = 1
+// WithGoNum is used set the number of goroutines in the Pool
+func WithGoNum(n int) func(*Pipe) {
+	return func(p *Pipe) {
+		if n < 1 {
+			n = 1
 		}
-		c.poolSize = size
+		p.numGos = n
 	}
 }
 
-// Pool processes checksum jobs concurrently
-func Pool(jobsIn <-chan Job, opts ...func(*Config)) <-chan Job {
-	var wg sync.WaitGroup
-	jobsOut := make(chan Job)
-	config := defaultConfig()
-	for _, option := range opts {
-		option(config)
+// NewPipe returns a new Pipe
+func NewPipe(opts ...func(*Pipe)) *Pipe {
+	pipe := &Pipe{
+		in:     make(chan Job),
+		out:    make(chan Job),
+		ctx:    context.Background(),
+		numGos: runtime.GOMAXPROCS(0),
 	}
-	wg.Add(config.poolSize)
-	for i := 0; i < config.poolSize; i++ {
+	for _, option := range opts {
+		option(pipe)
+	}
+	pipe.wg.Add(pipe.numGos)
+	for i := 0; i < pipe.numGos; i++ {
 		go func() {
-			defer wg.Done()
-			for job := range jobsIn {
+			defer pipe.wg.Done()
+			for job := range pipe.in {
 				select {
-				case <-config.ctx.Done():
-					return
+				case <-pipe.ctx.Done():
+					continue // drain input channel w/o doing Sum
 				default:
-					if job.err == nil {
-						job.sum, job.err = Sum(job.Path, job.HashNew)
+					if job.Err == nil {
+						job.Sum, job.Err = Sum(job.Path, job.HashNew)
 					}
-					jobsOut <- job
+					pipe.out <- job
 				}
 			}
 		}()
 	}
 	go func() {
-		wg.Wait()
-		close(jobsOut)
+		pipe.wg.Wait()
+		close(pipe.out)
 	}()
-	return jobsOut
+	return pipe
 }
 
-// Walk concurrently calculates checksums of regular files in a director
-func Walk(dir string, hashNew func() hash.Hash, opts ...func(*Config)) (<-chan Job, <-chan error) {
-	config := defaultConfig()
-	for _, option := range opts {
-		option(config)
+// Out returns the Pipe's recieve-only channel of Job results
+func (p *Pipe) Out() <-chan Job {
+	return p.out
+}
+
+// Close closes the Pipes input channel
+func (p *Pipe) Close() {
+	close(p.in)
+}
+
+// Add adds a Job to the Pipe input. Returns error if the Pipe context is canceled.
+func (p *Pipe) Add(j Job) error {
+	select {
+	case <-p.ctx.Done():
+		return errors.New(`walk canceled`)
+	default:
+		p.in <- j
 	}
-	jobsIn := make(chan Job)
-	done := make(chan error, 1)
-	// walk files in dir
+	return nil
+}
+
+// func (p *Pipe) ReadJobs(getJob func() *Job) {
+// 	for {
+// 		job := getJob()
+// 		if job == nil {
+// 			break
+// 		}
+// 		p.Add(*job)
+// 	}
+// }
+
+//Walk concurrently calculates checksums of regular files in a director
+func (p *Pipe) Walk(dir string, hashNew func() hash.Hash) error {
+	errs := make(chan error, 1)
 	go func() {
-		defer close(jobsIn)
-		defer close(done)
-		walk := func(p string, info os.FileInfo, err error) error {
+		defer p.Close()
+		walk := func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 			if info.Mode().IsRegular() {
-				select {
-				case <-config.ctx.Done():
-					return errors.New(`walk canceled`)
-				default:
-					jobsIn <- Job{Path: p, HashNew: hashNew}
+				err := p.Add(Job{Path: path, HashNew: hashNew})
+				if err != nil {
+					return err
 				}
 			}
 			return nil
 		}
-		done <- filepath.Walk(dir, walk)
+		errs <- filepath.Walk(dir, walk)
 	}()
-	return Pool(jobsIn, WithContext(config.ctx), WithPoolSize(config.poolSize)), done
+	return <-errs
 }

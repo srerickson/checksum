@@ -6,13 +6,12 @@ This Go module provides primitives for concurrently generating checksums of file
 
 ## Example
 
-This example uses Pipe to has files in directory:
+This example uses Pipe to generate checksums of all files in a directory:
 
 ```go
-
-pipe := checksum.NewPipe(checksum.WithGoNum(1))
+// Pipe with 5 goroutines
+pipe := checksum.NewPipe(checksum.WithGoNum(5))
 walkErrs := make(chan error, 1)
-
 
 go func() {
     defer pipe.Close()

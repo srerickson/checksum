@@ -9,6 +9,9 @@ This Go module provides primitives for concurrently generating checksums of file
 This example uses Pipe to generate checksums of all files in a directory:
 
 ```go
+dirPath := "test/fixture"
+hashNew := md5.New
+
 // Pipe with 5 goroutines
 pipe := checksum.NewPipe(checksum.WithGoNum(5))
 walkErrs := make(chan error, 1)
@@ -28,21 +31,16 @@ go func() {
         }
         return nil
     }
-    walkErrs <- filepath.Walk(root, walk)
+    walkErrs <- filepath.Walk(dirPath, walk)
 }()
-return pipe.Out(), walkErrs
-
-
-// generate MD5 sum for all regular files in the test/fixture folder
-jobs, errs := walk("test/fixture", md5.New)
 
 // print the results
-for j := range jobs {
+for j := range pipe.Out() {
     fmt.Printf("%s: %s\n", j.Path, j.SumString())
 }
 
 // check for walk error
-if err := <-errs; err != nil {
+if err := <-walkErrs; err != nil {
     fmt.Println(err.Error())
 }
 // test/fixture/folder1/file.txt: d41d8cd98f00b204e9800998ecf8427e

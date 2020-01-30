@@ -1,5 +1,5 @@
-// Package checksum provides Pipe, which can be used to
-// concurrently Hash files in a cancellable context.
+// Package checksum provides primitives for concurrently checksuming files
+// in a cancellable context.
 package checksum
 
 // Copyright 2020 Seth R. Erickson
@@ -26,7 +26,9 @@ import (
 	"sync"
 )
 
-// Pipe is the core object
+// Pipe is the central type provided by the package. Pipes are created with
+// NewPipe() and Jobs can be added to Pipes with Add(). Results are sent through
+// the channel returned by Out().
 type Pipe struct {
 	out    chan Job // Job results
 	in     chan Job // jop input
@@ -35,7 +37,8 @@ type Pipe struct {
 	ctx    context.Context
 }
 
-// Sum hashes a file path using hash returned by hashNew
+// Sum returns the checksum of the file at path using the hash returned by
+// hashNew. An error is returned if the file could not be opened or read.
 func Sum(path string, hashNew func() hash.Hash) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -50,7 +53,8 @@ func Sum(path string, hashNew func() hash.Hash) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-// WithGoNum is used set the number of goroutines in the Pool
+// WithGoNum is used set the number of goroutines used by a Pipe to
+// generate checksums. It is meant to be used as an argument in NewPipe().
 func WithGoNum(n int) func(*Pipe) {
 	return func(p *Pipe) {
 		if n < 1 {
@@ -60,14 +64,17 @@ func WithGoNum(n int) func(*Pipe) {
 	}
 }
 
-// WithContext is used to add a Context to Walk and Pool
+// WithContext is used set a Pipe's context. It is meant to be used
+// as an argument ing NewPipe().
 func WithContext(ctx context.Context) func(*Pipe) {
 	return func(p *Pipe) {
 		p.ctx = ctx
 	}
 }
 
-// NewPipe returns a new Pipe
+// NewPipe returns a new Pipe. Without options, the Pipe is created
+// with runtime.GOMAXPROCS(0) goroutines and the context.Background()
+// context.
 func NewPipe(opts ...func(*Pipe)) *Pipe {
 	pipe := &Pipe{
 		in:     make(chan Job),
@@ -107,7 +114,7 @@ func (p *Pipe) Out() <-chan Job {
 	return p.out
 }
 
-// Close closes the Pipes input channel.
+// Close closes the Pipe's input channel.
 func (p *Pipe) Close() {
 	close(p.in)
 }

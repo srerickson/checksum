@@ -116,8 +116,7 @@ func TestValidate(t *testing.T) {
 
 }
 
-func ExamplePipe() {
-
+func ExampleWalk() {
 	// walk creates a Pipe, walks the filetree at root, and adds checksum jobs to the pipe
 	// for each regular file.
 	walk := func(root string, hashNew func() hash.Hash) (<-chan checksum.Job, <-chan error) {

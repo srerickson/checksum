@@ -15,12 +15,12 @@ type Job struct {
 	Err     error            // any encountered errors
 }
 
-// SumString returns job's checksum as a hex encoded string
+// SumString returns the Job's checksum as a hex encoded string
 func (j Job) SumString() string {
 	return hex.EncodeToString(j.Sum)
 }
 
-// IsValid returns whether the job's checksum matches expected value
+// IsValid returns whether the Job's checksum matches expected value
 func (j Job) IsValid() bool {
 	return j.Sum != nil && bytes.Equal(j.Sum, j.Valid)
 }

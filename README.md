@@ -2,7 +2,7 @@
 
 [![](https://godoc.org/github.com/srerickson/checksum?status.svg)](https://godoc.org/github.com/srerickson/checksum)
 
-This package provides Pipe, which can be used to concurrently hash files in a cancellable context.
+This Go module provides primitives for concurrently generating checksums of files in a cancellable context.
 
 ## Example
 

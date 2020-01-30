@@ -1,3 +1,5 @@
+// Package checksum provides Pipe, which can be used to
+// concurrently Hash files in a cancellable context.
 package checksum
 
 // Copyright 2020 Seth R. Erickson
@@ -15,14 +17,11 @@ package checksum
 // limitations under the License.
 
 import (
-	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"hash"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 )
@@ -34,15 +33,6 @@ type Pipe struct {
 	wg     sync.WaitGroup
 	numGos int // number of goroutines in pool
 	ctx    context.Context
-}
-
-// Job is value streamed to/from Walk and Pool
-type Job struct {
-	Path    string           // path to file
-	HashNew func() hash.Hash // hash constructor function
-	Valid   []byte           // expected checksum (for validation)
-	Sum     []byte           // checksum result
-	Err     error            // any encountered errors
 }
 
 // Sum hashes a file path using hash returned by hashNew
@@ -60,23 +50,6 @@ func Sum(path string, hashNew func() hash.Hash) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-// SumString returns job's checksum as a hex encoded string
-func (j Job) SumString() string {
-	return hex.EncodeToString(j.Sum)
-}
-
-// IsValid returns whether the job's checksum matches expected value
-func (j Job) IsValid() bool {
-	return j.Sum != nil && bytes.Equal(j.Sum, j.Valid)
-}
-
-// WithContext is used to add a Context to Walk and Pool
-func WithContext(ctx context.Context) func(*Pipe) {
-	return func(p *Pipe) {
-		p.ctx = ctx
-	}
-}
-
 // WithGoNum is used set the number of goroutines in the Pool
 func WithGoNum(n int) func(*Pipe) {
 	return func(p *Pipe) {
@@ -84,6 +57,13 @@ func WithGoNum(n int) func(*Pipe) {
 			n = 1
 		}
 		p.numGos = n
+	}
+}
+
+// WithContext is used to add a Context to Walk and Pool
+func WithContext(ctx context.Context) func(*Pipe) {
+	return func(p *Pipe) {
+		p.ctx = ctx
 	}
 }
 
@@ -127,12 +107,14 @@ func (p *Pipe) Out() <-chan Job {
 	return p.out
 }
 
-// Close closes the Pipes input channel
+// Close closes the Pipes input channel.
 func (p *Pipe) Close() {
 	close(p.in)
 }
 
-// Add adds a Job to the Pipe input. Returns error if the Pipe context is canceled.
+// Add adds a Job to the Pipe. It returns an error if the Pipe context is
+// canceled. Typically, to avoid deadlocks, Add should be called in a separate
+// goroutine than was used to create the pipe with NewPipe().
 func (p *Pipe) Add(j Job) error {
 	select {
 	case <-p.ctx.Done():
@@ -141,26 +123,4 @@ func (p *Pipe) Add(j Job) error {
 		p.in <- j
 	}
 	return nil
-}
-
-//Walk concurrently calculates checksums of regular files in a director
-func (p *Pipe) Walk(dir string, hashNew func() hash.Hash) <-chan error {
-	errs := make(chan error, 1)
-	go func() {
-		defer p.Close()
-		walk := func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.Mode().IsRegular() {
-				err := p.Add(Job{Path: path, HashNew: hashNew})
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		errs <- filepath.Walk(dir, walk)
-	}()
-	return errs
 }

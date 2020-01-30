@@ -143,18 +143,8 @@ func (p *Pipe) Add(j Job) error {
 	return nil
 }
 
-// func (p *Pipe) ReadJobs(getJob func() *Job) {
-// 	for {
-// 		job := getJob()
-// 		if job == nil {
-// 			break
-// 		}
-// 		p.Add(*job)
-// 	}
-// }
-
 //Walk concurrently calculates checksums of regular files in a director
-func (p *Pipe) Walk(dir string, hashNew func() hash.Hash) error {
+func (p *Pipe) Walk(dir string, hashNew func() hash.Hash) <-chan error {
 	errs := make(chan error, 1)
 	go func() {
 		defer p.Close()
@@ -172,5 +162,5 @@ func (p *Pipe) Walk(dir string, hashNew func() hash.Hash) error {
 		}
 		errs <- filepath.Walk(dir, walk)
 	}()
-	return <-errs
+	return errs
 }

@@ -17,12 +17,28 @@ var validSums = map[string]string{
 func TestWalk(t *testing.T) {
 	newMD5 := md5.New
 	pipe := NewPipe()
-	err := pipe.Walk(`test/fixture`, newMD5)
+	errs := pipe.Walk(`test/fixture`, newMD5)
 	for j := range pipe.Out() {
 		if j.Err != nil {
 			t.Error(j.Err)
 		}
 	}
+	err := <-errs
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
+func TestWalk1Chan(t *testing.T) {
+	newMD5 := md5.New
+	pipe := NewPipe(WithGoNum(1))
+	errs := pipe.Walk(`test/fixture`, newMD5)
+	for j := range pipe.Out() {
+		if j.Err != nil {
+			t.Error(j.Err)
+		}
+	}
+	err := <-errs
 	if err != nil {
 		t.Fatalf(err.Error())
 	}

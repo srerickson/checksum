@@ -94,9 +94,7 @@ func NewPipe(opts ...func(*Pipe)) *Pipe {
 				case <-pipe.ctx.Done():
 					continue // drain input channel w/o doing Sum
 				default:
-					if job.Err == nil {
-						job.Sum, job.Err = Sum(job.Path, job.HashNew)
-					}
+					job.Do()
 					pipe.out <- job
 				}
 			}

@@ -108,6 +108,9 @@ func TestValidate(t *testing.T) {
 		if !j.IsValid() {
 			t.Error(`expected valid result`)
 		}
+		if j.Info().Mode() != 0644 {
+			t.Error(`expected 0644 FileMode`)
+		}
 	}
 	if numResults != len(testMD5Sums) {
 		t.Errorf("expected %d results, got %d", len(testMD5Sums), numResults)

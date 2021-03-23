@@ -2,50 +2,24 @@
 
 [![](https://godoc.org/github.com/srerickson/checksum?status.svg)](https://godoc.org/github.com/srerickson/checksum)
 
-This Go module provides primitives for concurrently generating checksums of files in a cancellable context.
+Go module for concurrent checksums. Uses `fs.FS` (go v1.16).
 
 ## Example
 
-This example uses Pipe to generate checksums of all files in a directory:
-
 ```go
-dirPath := "test/fixture"
-hashNew := md5.New
-
-// Pipe with 5 goroutines
-pipe := checksum.NewPipe(checksum.WithGoNum(5))
-walkErrs := make(chan error, 1)
-
-go func() {
-    defer pipe.Close()
-    defer close(walkErrs)
-    walk := func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
-        if info.Mode().IsRegular() {
-            err := pipe.Add(checksum.Job{Path: path, HashNew: hashNew})
-            if err != nil {
-                return err
-            }
-        }
-        return nil
+// function called for each complete job
+each := func(done checksum.Job) {
+    if done.SumString() == "e8c078f0e4ad79b16fcb618a3790c2df" {
+        fmt.Println(done.Path())
     }
-    walkErrs <- filepath.Walk(dirPath, walk)
-}()
-
-// print the results
-for j := range pipe.Out() {
-    fmt.Printf("%s: %s\n", j.Path, j.SumString())
 }
+// walk over an fs.FS, doing checksums
+err := checksum.Walk(os.DirFS("test/fixture"), each,
+    checksum.PipeGos(5),       // 5 go routines
+    checksum.PipeAlg(md5.New)) // md5sum
 
-// check for walk error
-if err := <-walkErrs; err != nil {
-    fmt.Println(err.Error())
+if err != nil {
+    log.Fatal(err)
 }
-// test/fixture/folder1/file.txt: d41d8cd98f00b204e9800998ecf8427e
-// test/fixture/folder1/folder2/file2.txt: d41d8cd98f00b204e9800998ecf8427e
-// test/fixture/hello.csv: 9d02fa6e9dd9f38327f7b213daa28be6
-// test/fixture/folder1/folder2/sculpture-stone-face-head-888027.jpg: e8c078f0e4ad79b16fcb618a3790c2df
-
+// Output: folder1/folder2/sculpture-stone-face-head-888027.jpg
 ```

@@ -2,9 +2,6 @@ package checksum
 
 import "io/fs"
 
-type WalkConfig struct {
-}
-
 type JobFunc func(Job)
 
 func Walk(fsys fs.FS, root string, each JobFunc, opts ...func(*Pipe)) error {

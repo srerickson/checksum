@@ -1,7 +1,6 @@
 package checksum
 
 import (
-	"bytes"
 	"encoding/hex"
 	"hash"
 	"io"
@@ -10,11 +9,11 @@ import (
 
 // Job is value streamed to/from Walk and Pool
 type Job struct {
-	path  string           // path to file
-	alg   func() hash.Hash // hash constructor function
-	valid []byte           // expected checksum (for validation)
-	sum   []byte           // checksum result
-	err   error            // any encountered errors
+	path  string   // path to file
+	algs  []Alg    // hash constructor function
+	valid []byte   // expected checksum (for validation)
+	sums  [][]byte // checksum result
+	err   error    // any encountered errors
 	fs    fs.FS
 	info  fs.FileInfo
 }
@@ -43,27 +42,30 @@ func (j *Job) do() {
 	if j.err != nil {
 		return
 	}
-	hash := j.alg()
-	_, j.err = io.Copy(hash, file)
+	var hashes []hash.Hash
+	var writers []io.Writer
+	for _, newHash := range j.algs {
+		h := newHash()
+		hashes = append(hashes, h)
+		writers = append(writers, io.Writer(h))
+	}
+	multi := io.MultiWriter(writers...)
+	_, j.err = io.Copy(multi, file)
 	if j.err != nil {
 		return
 	}
-	j.sum = hash.Sum(nil)
-}
-
-// JobAlg is used to set job's checksum algorithm.
-// Use as a functional argument in Add()
-func JobAlg(alg func() hash.Hash) func(*Job) {
-	return func(j *Job) {
-		j.alg = alg
+	for i := range hashes {
+		j.sums = append(j.sums, hashes[i].Sum(nil))
 	}
 }
 
-// JobSum is used to set a job's expected checksum.
+// JobAlg is used to set job's checksum algorithm.
+// This option may be repeated with different algorithms
+// in order to generate multiple chacksums per file.
 // Use as a functional argument in Add()
-func JobSum(sum []byte) func(*Job) {
+func JobAlg(alg func() hash.Hash) func(*Job) {
 	return func(j *Job) {
-		j.valid = sum
+		j.algs = append(j.algs, alg)
 	}
 }
 
@@ -72,33 +74,24 @@ func (j Job) Path() string {
 	return j.path
 }
 
-// Alg returns the hash function used in the job
-func (j Job) Alg() func() hash.Hash {
-	return j.alg
+// Alg returns the hash functions used in the job
+func (j Job) Algs() []Alg {
+	return j.algs
 }
 
-// Sum returns the checksum
+// Sum returns the first checksum
 func (j Job) Sum() []byte {
-	var s []byte
-	copy(s, j.sum)
-	return s
-}
-
-// Expected returns the expected checksum (for validation)
-func (j Job) Expected() []byte {
-	var s []byte
-	copy(s, j.sum)
+	if len(j.sums) == 0 {
+		return nil
+	}
+	var s = make([]byte, len(j.sums[0]))
+	copy(s, j.sums[0])
 	return s
 }
 
 // SumString returns the Job's checksum as a hex encoded string
 func (j Job) SumString() string {
-	return hex.EncodeToString(j.sum)
-}
-
-// IsValid returns whether the Job's checksum matches expected value
-func (j Job) IsValid() bool {
-	return j.sum != nil && bytes.Equal(j.sum, j.valid)
+	return hex.EncodeToString(j.Sum())
 }
 
 // Info returns os.FileInfo from the file of a completed Job

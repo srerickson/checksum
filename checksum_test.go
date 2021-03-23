@@ -92,7 +92,7 @@ func ExampleWalk() {
 			fmt.Println(done.Path())
 		}
 	}
-	err := checksum.Walk(os.DirFS("test/fixture"), each,
+	err := checksum.Walk(os.DirFS("test/fixture"), ".", each,
 		checksum.PipeGos(5),       // 5 go routines
 		checksum.PipeAlg(md5.New)) // md5sum
 

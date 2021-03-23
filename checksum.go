@@ -26,35 +26,6 @@ import (
 	"sync"
 )
 
-type JobFunc func(Job)
-
-func Walk(dir fs.FS, each JobFunc, opts ...func(*Pipe)) error {
-	pipe := NewPipe(dir, opts...)
-	walkErr := make(chan error, 1)
-	go func() {
-		defer pipe.Close()
-		defer close(walkErr)
-		walk := func(path string, info fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.Type().IsRegular() {
-				err := pipe.Add(path)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		walkErr <- fs.WalkDir(dir, `.`, walk)
-	}()
-	// complete jobs
-	for complete := range pipe.Out() {
-		each(complete)
-	}
-	return <-walkErr
-}
-
 // Pipe is a checksum worker pool. It has an input channel and an output channel.
 // Add jobs to the input channel with Add() and receive results with Out(). Typically
 // these operations happen on different go routines.

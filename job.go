@@ -51,7 +51,7 @@ func (j *Job) do() {
 	j.sum = hash.Sum(nil)
 }
 
-// JobWithJobAlg is used to set job's checksum algorithm.
+// JobAlg is used to set job's checksum algorithm.
 // Use as a functional argument in Add()
 func JobAlg(alg func() hash.Hash) func(*Job) {
 	return func(j *Job) {

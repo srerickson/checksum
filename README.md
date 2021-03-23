@@ -7,19 +7,24 @@ Go module for concurrent checksums. Uses `fs.FS` (go v1.16).
 ## Example
 
 ```go
-// function called for each complete job
-each := func(done checksum.Job) {
-    if done.SumString() == "e8c078f0e4ad79b16fcb618a3790c2df" {
-        fmt.Println(done.Path())
+// called for each complete job
+each := func(done checksum.Job, err error) {
+    if err != nil {
+        // handle error
+        log.Println(err)
+        return
+    }
+    if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {
+        fmt.Println(done.SumString(checksum.SHA1))
     }
 }
-// walk over an fs.FS, doing checksums
-err := checksum.Walk(os.DirFS("test/fixture"), each,
-    checksum.PipeGos(5),       // 5 go routines
-    checksum.PipeAlg(md5.New)) // md5sum
+err := checksum.Walk(os.DirFS("test/fixture"), ".", each,
+    checksum.WithGos(5), // 5 go routines
+    checksum.WithMD5(),  // md5sum
+    checksum.WithSHA1()) // sha1
 
 if err != nil {
-    log.Fatal(err)
+    fmt.Println(err)
 }
-// Output: folder1/folder2/sculpture-stone-face-head-888027.jpg
+// Output: a0556088c3b6a78b2d8ef7b318cfca54589f68c0
 ```

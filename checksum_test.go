@@ -5,8 +5,8 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/srerickson/checksum"
@@ -19,45 +19,16 @@ var testMD5Sums = map[string]string{
 	"test/fixture/hello.csv":                                            "9d02fa6e9dd9f38327f7b213daa28be6",
 }
 
-// func TestWalk(t *testing.T) {
-// 	pipe := checksum.NewPipe()
-// 	errs := pipe.Walk(`test/fixture`, md5.New)
-// 	for j := range pipe.Out() {
-// 		if j.Err != nil {
-// 			t.Error(j.Err)
-// 		}
-// 	}
-// 	err := <-errs
-// 	if err != nil {
-// 		t.Fatalf(err.Error())
-// 	}
-// }
-
-// func TestWalk1Chan(t *testing.T) {
-// 	pipe := checksum.NewPipe(checksum.WithGoNum(1))
-// 	errs := pipe.Walk(`test/fixture`, md5.New)
-// 	for j := range pipe.Out() {
-// 		if j.Err != nil {
-// 			t.Error(j.Err)
-// 		}
-// 	}
-// 	err := <-errs
-// 	if err != nil {
-// 		t.Fatalf(err.Error())
-// 	}
-// }
-
 func TestContextCancel(t *testing.T) {
 	errs := make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
-	pipe := checksum.NewPipe(checksum.WithContext(ctx))
+	dir := os.DirFS(`.`)
+	pipe := checksum.NewPipe(dir, checksum.PipeCtx(ctx))
 	go func() {
 		defer pipe.Close()
-		j1 := checksum.Job{Path: "nofile1", HashNew: md5.New}
-		j2 := checksum.Job{Path: "nofile2", HashNew: md5.New}
-		pipe.Add(j1)
+		pipe.Add(`nofile1`, checksum.JobAlg(md5.New))
 		cancel() // <-- cancel the context
-		errs <- pipe.Add(j2)
+		errs <- pipe.Add(`nofile2`, checksum.JobAlg(md5.New))
 	}()
 	numResults := 0
 	for range pipe.Out() {
@@ -72,16 +43,14 @@ func TestContextCancel(t *testing.T) {
 }
 
 func TestPipeErr(t *testing.T) {
-	pipe := checksum.NewPipe(checksum.WithGoNum(2))
+	dir := os.DirFS(`.`)
+	pipe := checksum.NewPipe(dir, checksum.PipeGos(2), checksum.PipeAlg(md5.New))
 	go func() {
 		defer pipe.Close()
-		pipe.Add(checksum.Job{
-			Path:    `nofile`,
-			HashNew: md5.New,
-		})
+		pipe.Add(`nofile`)
 	}()
 	result := <-pipe.Out()
-	if result.Err == nil {
+	if result.Err() == nil {
 		t.Error(`expected read error`)
 	}
 	_, alive := <-pipe.Out()
@@ -91,15 +60,13 @@ func TestPipeErr(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	pipe := checksum.NewPipe()
+	dir := os.DirFS(`.`)
+	pipe := checksum.NewPipe(dir, checksum.PipeGos(3), checksum.PipeAlg(md5.New))
 	go func() {
 		defer pipe.Close()
 		for path, sum := range testMD5Sums {
 			sumBytes, _ := hex.DecodeString(sum)
-			pipe.Add(checksum.Job{
-				Path:    path,
-				Valid:   sumBytes,
-				HashNew: md5.New})
+			pipe.Add(path, checksum.JobSum(sumBytes))
 		}
 	}()
 	numResults := 0
@@ -119,42 +86,18 @@ func TestValidate(t *testing.T) {
 }
 
 func ExampleWalk() {
-	dir := "test/fixture"
-	hashNew := md5.New
-
-	// Pipe with 5 goroutines
-	pipe := checksum.NewPipe(checksum.WithGoNum(5))
-	walkErrs := make(chan error, 1)
-
-	go func() {
-		defer pipe.Close()
-		defer close(walkErrs)
-		walk := func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.Mode().IsRegular() {
-				err := pipe.Add(checksum.Job{Path: path, HashNew: hashNew})
-				if err != nil {
-					return err
-				}
-			}
-			return nil
+	// called for each complete job
+	each := func(done checksum.Job) {
+		if done.SumString() == "e8c078f0e4ad79b16fcb618a3790c2df" {
+			fmt.Println(done.Path())
 		}
-		walkErrs <- filepath.Walk(dir, walk)
-	}()
-
-	// print the results
-	for j := range pipe.Out() {
-		fmt.Printf("%s: %s\n", j.Path, j.SumString())
 	}
+	err := checksum.Walk(os.DirFS("test/fixture"), each,
+		checksum.PipeGos(5),       // 5 go routines
+		checksum.PipeAlg(md5.New)) // md5sumccccccucjiulllcdgccelnnevggubdfrtflddgickcur
 
-	// check for walk error
-	if err := <-walkErrs; err != nil {
-		fmt.Println(err.Error())
+	if err != nil {
+		log.Fatal(err)
 	}
-	// test/fixture/folder1/file.txt: d41d8cd98f00b204e9800998ecf8427e
-	// test/fixture/folder1/folder2/file2.txt: d41d8cd98f00b204e9800998ecf8427e
-	// test/fixture/hello.csv: 9d02fa6e9dd9f38327f7b213daa28be6
-	// test/fixture/folder1/folder2/sculpture-stone-face-head-888027.jpg: e8c078f0e4ad79b16fcb618a3790c2df
+	// Output: folder1/folder2/sculpture-stone-face-head-888027.jpg
 }

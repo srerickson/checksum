@@ -5,53 +5,107 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
-	"os"
+	"io/fs"
 )
 
 // Job is value streamed to/from Walk and Pool
 type Job struct {
-	Path    string           // path to file
-	HashNew func() hash.Hash // hash constructor function
-	Valid   []byte           // expected checksum (for validation)
-	Sum     []byte           // checksum result
-	info    os.FileInfo
-	Err     error // any encountered errors
+	path  string           // path to file
+	alg   func() hash.Hash // hash constructor function
+	valid []byte           // expected checksum (for validation)
+	sum   []byte           // checksum result
+	err   error            // any encountered errors
+	fs    fs.FS
+	info  fs.FileInfo
+}
+
+// NewJob returns a new checksum job for the path
+func newJob(path string, opts ...func(*Job)) Job {
+	j := Job{path: path}
+	for _, opt := range opts {
+		opt(&j)
+	}
+	return j
+}
+
+// do does the job
+func (j *Job) do() {
+	if j.err != nil {
+		return
+	}
+	var file fs.File
+	file, j.err = j.fs.Open(j.path)
+	if j.err != nil {
+		return
+	}
+	defer file.Close()
+	j.info, j.err = file.Stat()
+	if j.err != nil {
+		return
+	}
+	hash := j.alg()
+	_, j.err = io.Copy(hash, file)
+	if j.err != nil {
+		return
+	}
+	j.sum = hash.Sum(nil)
+}
+
+// JobWithJobAlg is used to set job's checksum algorithm.
+// Use as a functional argument in Add()
+func JobAlg(alg func() hash.Hash) func(*Job) {
+	return func(j *Job) {
+		j.alg = alg
+	}
+}
+
+// JobSum is used to set a job's expected checksum.
+// Use as a functional argument in Add()
+func JobSum(sum []byte) func(*Job) {
+	return func(j *Job) {
+		j.valid = sum
+	}
+}
+
+// Path returns the path of the job's file
+func (j Job) Path() string {
+	return j.path
+}
+
+// Alg returns the hash function used in the job
+func (j Job) Alg() func() hash.Hash {
+	return j.alg
+}
+
+// Sum returns the checksum
+func (j Job) Sum() []byte {
+	var s []byte
+	copy(s, j.sum)
+	return s
+}
+
+// Expected returns the expected checksum (for validation)
+func (j Job) Expected() []byte {
+	var s []byte
+	copy(s, j.sum)
+	return s
 }
 
 // SumString returns the Job's checksum as a hex encoded string
 func (j Job) SumString() string {
-	return hex.EncodeToString(j.Sum)
+	return hex.EncodeToString(j.sum)
 }
 
 // IsValid returns whether the Job's checksum matches expected value
 func (j Job) IsValid() bool {
-	return j.Sum != nil && bytes.Equal(j.Sum, j.Valid)
+	return j.sum != nil && bytes.Equal(j.sum, j.valid)
 }
 
 // Info returns os.FileInfo from the file of a completed Job
-func (j Job) Info() os.FileInfo {
+func (j Job) Info() fs.FileInfo {
 	return j.info
 }
 
-// Do does the job
-func (j *Job) Do() {
-	if j.Err != nil {
-		return
-	}
-	var file *os.File
-	file, j.Err = os.Open(j.Path)
-	if j.Err != nil {
-		return
-	}
-	defer file.Close()
-	j.info, j.Err = file.Stat()
-	if j.Err != nil {
-		return
-	}
-	hash := j.HashNew()
-	_, j.Err = io.Copy(hash, file)
-	if j.Err != nil {
-		return
-	}
-	j.Sum = hash.Sum(nil)
+func (j Job) Err() error {
+	return j.err
 }

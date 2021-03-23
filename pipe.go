@@ -15,12 +15,9 @@ package checksum
 // limitations under the License.
 
 import (
-	"context"
-	"crypto/sha256"
 	"errors"
 	"hash"
 	"io/fs"
-	"runtime"
 	"sync"
 )
 
@@ -29,75 +26,43 @@ type Alg func() hash.Hash
 
 // Pipe is a checksum worker pool. It has an input channel and an output channel.
 // Add jobs to the input channel with Add() and receive results with Out(). Typically
-// these operations happen on different go routines.
+// these are called in different go routines.
 type Pipe struct {
-	in     chan Job // jop input
-	out    chan Job // job results
-	numGos int      // number of goroutines in pool
-	ctx    context.Context
-	algs   []Alg
-}
-
-// PipeGos is used set the number of goroutines used by a Pipe.
-// Used as an optional argument for NewPipe().
-func PipeGos(n int) func(*Pipe) {
-	return func(p *Pipe) {
-		if n < 1 {
-			n = 1
-		}
-		p.numGos = n
-	}
-}
-
-// PipeCtx is used set a Pipe's context.
-// Used as an optional argument for NewPipe().
-func PipeCtx(ctx context.Context) func(*Pipe) {
-	return func(p *Pipe) {
-		p.ctx = ctx
-	}
-}
-
-// PipeAlg sets the default hash alforithm used in the Pipe.
-// Used as an optional argument for NewPipe().
-func PipeAlg(alg Alg) func(*Pipe) {
-	return func(p *Pipe) {
-		p.algs = append(p.algs, alg)
-	}
+	conf Config   // common config options
+	fsys fs.FS    // the pipe's jobs are scoped to the fs
+	in   chan Job // jop input
+	out  chan Job // job results
 }
 
 // NewPipe returns a new Pipe scoped to dir
 // in the given FS. Without options, the Pipe has defaults:
 // - PipeGos(runtime.GOMAXPROCS(0))
 // - PipeCtx(context.Background())
-// - PipeAlg(sha256.New)
-func NewPipe(dir fs.FS, opts ...func(*Pipe)) *Pipe {
+// - no checksums are defined
+func NewPipe(fsys fs.FS, opts ...func(*Config)) (*Pipe, error) {
 	pipe := &Pipe{
-		in:     make(chan Job),
-		out:    make(chan Job),
-		ctx:    context.Background(),
-		numGos: runtime.GOMAXPROCS(0),
+		fsys: fsys,
+		in:   make(chan Job),
+		out:  make(chan Job),
+		conf: defaultConfig(),
 	}
 	for _, option := range opts {
-		option(pipe)
+		option(&pipe.conf)
 	}
-	if pipe.algs == nil {
-		pipe.algs = []Alg{sha256.New} // default alg
+	if len(pipe.conf.algs) == 0 {
+		return nil, errors.New(`checksum algorithms not defined`)
 	}
+
 	var wg sync.WaitGroup
-	for i := 0; i < pipe.numGos; i++ {
+	for i := 0; i < pipe.conf.numGos; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range pipe.in {
 				select {
-				case <-pipe.ctx.Done():
+				case <-pipe.conf.ctx.Done():
 					continue // clear input channel
 				default:
-					// configure and run the job
-					job.fs = dir
-					if job.algs == nil {
-						job.algs = pipe.algs
-					}
 					job.do()
 					pipe.out <- job
 				}
@@ -108,7 +73,7 @@ func NewPipe(dir fs.FS, opts ...func(*Pipe)) *Pipe {
 		wg.Wait()
 		close(pipe.out)
 	}()
-	return pipe
+	return pipe, nil
 }
 
 // Out returns the Pipe's recieve-only channel of Job results
@@ -125,10 +90,14 @@ func (p *Pipe) Close() {
 // error if the Pipe context is canceled. Typically, to avoid
 // deadlocks, Add is  called in a separate goroutine than was
 // used to create the pipe with NewPipe().
-func (p *Pipe) Add(path string, opts ...func(*Job)) error {
-	j := newJob(path, opts...)
+func (p *Pipe) Add(path string) error {
+	j := Job{
+		path: path,
+		fs:   p.fsys,
+		algs: p.conf.algs,
+	}
 	select {
-	case <-p.ctx.Done():
+	case <-p.conf.ctx.Done():
 		return errors.New(`walk canceled`)
 	default:
 		p.in <- j

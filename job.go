@@ -9,22 +9,12 @@ import (
 
 // Job is value streamed to/from Walk and Pool
 type Job struct {
-	path  string   // path to file
-	algs  []Alg    // hash constructor function
-	valid []byte   // expected checksum (for validation)
-	sums  [][]byte // checksum result
-	err   error    // any encountered errors
-	fs    fs.FS
-	info  fs.FileInfo
-}
-
-// NewJob returns a new checksum job for the path
-func newJob(path string, opts ...func(*Job)) Job {
-	j := Job{path: path}
-	for _, opt := range opts {
-		opt(&j)
-	}
-	return j
+	path string            // path to file
+	algs map[string]Alg    // hash constructor function
+	sums map[string][]byte // checksum result
+	err  error             // any encountered errors
+	fs   fs.FS
+	info fs.FileInfo
 }
 
 // do does the job
@@ -42,11 +32,11 @@ func (j *Job) do() {
 	if j.err != nil {
 		return
 	}
-	var hashes []hash.Hash
+	var hashes = make(map[string]hash.Hash)
 	var writers []io.Writer
-	for _, newHash := range j.algs {
+	for name, newHash := range j.algs {
 		h := newHash()
-		hashes = append(hashes, h)
+		hashes[name] = h
 		writers = append(writers, io.Writer(h))
 	}
 	multi := io.MultiWriter(writers...)
@@ -54,18 +44,9 @@ func (j *Job) do() {
 	if j.err != nil {
 		return
 	}
-	for i := range hashes {
-		j.sums = append(j.sums, hashes[i].Sum(nil))
-	}
-}
-
-// JobAlg is used to set job's checksum algorithm.
-// This option may be repeated with different algorithms
-// in order to generate multiple chacksums per file.
-// Use as a functional argument in Add()
-func JobAlg(alg func() hash.Hash) func(*Job) {
-	return func(j *Job) {
-		j.algs = append(j.algs, alg)
+	j.sums = make(map[string][]byte)
+	for name, h := range hashes {
+		j.sums[name] = h.Sum(nil)
 	}
 }
 
@@ -74,24 +55,19 @@ func (j Job) Path() string {
 	return j.path
 }
 
-// Alg returns the hash functions used in the job
-func (j Job) Algs() []Alg {
-	return j.algs
-}
-
 // Sum returns the first checksum
-func (j Job) Sum() []byte {
-	if len(j.sums) == 0 {
+func (j Job) Sum(name string) []byte {
+	if j.sums == nil || j.sums[name] == nil {
 		return nil
 	}
-	var s = make([]byte, len(j.sums[0]))
-	copy(s, j.sums[0])
+	var s = make([]byte, len(j.sums[name]))
+	copy(s, j.sums[name])
 	return s
 }
 
 // SumString returns the Job's checksum as a hex encoded string
-func (j Job) SumString() string {
-	return hex.EncodeToString(j.Sum())
+func (j Job) SumString(name string) string {
+	return hex.EncodeToString(j.Sum(name))
 }
 
 // Info returns os.FileInfo from the file of a completed Job

@@ -2,10 +2,14 @@ package checksum
 
 import (
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"io/fs"
 )
+
+var ErrNotRegularFile = errors.New(`not a regular file`)
 
 // Job is value streamed to/from Walk and Pool
 type Job struct {
@@ -14,7 +18,6 @@ type Job struct {
 	sums map[string][]byte           // checksum result
 	err  error                       // any encountered errors
 	fs   fs.FS
-	info fs.FileInfo
 }
 
 // do does the job
@@ -28,8 +31,13 @@ func (j *Job) do() {
 		return
 	}
 	defer file.Close()
-	j.info, j.err = file.Stat()
+	var info fs.FileInfo
+	info, j.err = file.Stat()
 	if j.err != nil {
+		return
+	}
+	if !info.Mode().IsRegular() {
+		j.err = fmt.Errorf(`cannot checksum %s: %w`, j.path, ErrNotRegularFile)
 		return
 	}
 	var hashes = make(map[string]hash.Hash)
@@ -50,12 +58,14 @@ func (j *Job) do() {
 	}
 }
 
-// Path returns the path of the job's file
+// Path returns the Job's path
 func (j Job) Path() string {
 	return j.path
 }
 
-// Sum returns the first checksum
+// Sum returns the checksum for the named algorithm. The package defines common
+// algorithm names (MD5, SHA256, etc.), otherwise name refers to the string
+// passed to WithAlg().
 func (j Job) Sum(name string) []byte {
 	if j.sums == nil || j.sums[name] == nil {
 		return nil
@@ -65,16 +75,14 @@ func (j Job) Sum(name string) []byte {
 	return s
 }
 
-// SumString returns the Job's checksum as a hex encoded string
+// SumString returns a string representation of the checksum for the named
+// algorithm. The package defines common algorithm names (MD5, SHA256, etc.),
+// otherwise name refers to the string passed to WithAlg().
 func (j Job) SumString(name string) string {
 	return hex.EncodeToString(j.Sum(name))
 }
 
-// Info returns os.FileInfo from the file of a completed Job
-func (j Job) Info() fs.FileInfo {
-	return j.info
-}
-
+// Err returns any errors from the Job
 func (j Job) Err() error {
 	return j.err
 }

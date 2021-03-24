@@ -52,6 +52,7 @@ func WithCtx(ctx context.Context) func(*Config) {
 }
 
 // WithAlg adds the named algorith to Walk() and NewPipe().
+// Can be repeated for different Algs.
 func WithAlg(name string, alg func() hash.Hash) func(*Config) {
 	return func(c *Config) {
 		if c.algs == nil {

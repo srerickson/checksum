@@ -20,23 +20,36 @@ import (
 	"sync"
 )
 
-// Pipe is a checksum worker pool. It has an input channel and an output channel.
-// Add jobs to the input channel with Add() and receive results with Out(). Typically
-// these are called in different go routines.
-type Pipe struct {
+// A Pipe performs concurrent checksum processing. It has an input channel and
+// an output channel and a configurable number of go routines that process Jobs.
+// Pipes are created with NewPipe(). Jobs are added to the Pipe with Add().
+// Processed Jobs are added to the channel returned by Out(). Add() and Out()
+// should be called from separate go routines to avoid deadlocks (See Walk() for
+// an example).
+//
+// The Close() method must be called to properly free resource of Pipes created
+// with NewPipe.
+type Pipe interface {
+	Add(string) error
+	Out() <-chan Job
+	Close()
+}
+
+type pipe struct {
 	conf Config   // common config options
 	fsys fs.FS    // the pipe's jobs are scoped to the fs
 	in   chan Job // jop input
 	out  chan Job // job results
 }
 
-// NewPipe returns a new Pipe scoped to dir
-// in the given FS. Without options, the Pipe has defaults:
-// - PipeGos(runtime.GOMAXPROCS(0))
-// - PipeCtx(context.Background())
-// - no checksums are defined
-func NewPipe(fsys fs.FS, opts ...func(*Config)) (*Pipe, error) {
-	pipe := &Pipe{
+// NewPipe returns a new Pipe scoped to fsys. The following functional options
+// are use to configre the Pipe:
+//  - With[Alg](): to set the checksum algorithm(s) used by the Pipe (REQUIRED)
+//  - WithCtx(): sets the Pipe's context. Default: context.Background().
+//  - WithNumGos(): sets the number of Job-processing go routines.
+//    Default: runtime.GOMAXPROCS(0)
+func NewPipe(fsys fs.FS, opts ...func(*Config)) (Pipe, error) {
+	pipe := &pipe{
 		fsys: fsys,
 		in:   make(chan Job),
 		out:  make(chan Job),
@@ -73,30 +86,31 @@ func NewPipe(fsys fs.FS, opts ...func(*Config)) (*Pipe, error) {
 }
 
 // Out returns the Pipe's recieve-only channel of Job results
-func (p *Pipe) Out() <-chan Job {
+func (p *pipe) Out() <-chan Job {
 	return p.out
 }
 
-// Close closes the Pipe's input channel.
-func (p *Pipe) Close() {
+// Close frees the resources used by the Pipe. Calling Add() after Close() will
+// cause a panic.
+func (p *pipe) Close() {
 	close(p.in)
 }
 
-// Add adds a checksum job for path to the Pipe. It returns an
-// error if the Pipe context is canceled. Typically, to avoid
-// deadlocks, Add is  called in a separate goroutine than was
-// used to create the pipe with NewPipe().
-func (p *Pipe) Add(path string) error {
-	j := Job{
-		path: path,
-		fs:   p.fsys,
-		algs: p.conf.algs,
-	}
+// Add adds a checksum job for path to the Pipe. The path is evaluated in the
+// context of the Pipe's fs.FS. It returns an error if the Pipe context is
+// canceled and the job is not created. It causes a panic if called after
+// Close(). To avoid deadlocks, Add should be called in a separate go routine
+// than Out().
+func (p *pipe) Add(path string) error {
 	select {
 	case <-p.conf.ctx.Done():
-		return errors.New(`walk canceled`)
+		return p.conf.ctx.Err()
 	default:
-		p.in <- j
+		p.in <- Job{
+			path: path,
+			fs:   p.fsys,
+			algs: p.conf.algs,
+		}
 	}
 	return nil
 }

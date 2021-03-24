@@ -25,10 +25,10 @@ func TestContextCancel(t *testing.T) {
 	go func() {
 		defer pipe.Close()
 		pipe.Add(`nofile1`)
-		cancel() // <-- cancel the context
+		cancel() // <-- Add() should return err after this
 		errs <- pipe.Add(`nofile2`)
 	}()
-	numResults := 0
+	var numResults int
 	for range pipe.Out() {
 		numResults++
 	}
@@ -42,22 +42,26 @@ func TestContextCancel(t *testing.T) {
 
 func TestPipeErr(t *testing.T) {
 	dir := os.DirFS(`.`)
-	pipe, err := checksum.NewPipe(dir, checksum.WithGos(2), checksum.WithMD5())
+	pipe, err := checksum.NewPipe(dir, checksum.WithGos(1), checksum.WithMD5())
 	if err != nil {
 		t.Fatal(err)
 	}
 	go func() {
 		defer pipe.Close()
-		pipe.Add(`nofile`)
+		pipe.Add(`nofile`) // doesn't exist
+		pipe.Add(`.`)      // not a regular file
 	}()
-	result := <-pipe.Out()
-	if result.Err() == nil {
-		t.Error(`expected read error`)
+	for range []int{1, 2} {
+		result := <-pipe.Out()
+		if result.Err() == nil {
+			t.Error(`expected error`)
+		}
 	}
 	_, alive := <-pipe.Out()
 	if alive {
 		t.Error(`expected closed chan`)
 	}
+	//pipe.Add(`file`) // panic
 }
 
 func TestValidate(t *testing.T) {
@@ -72,16 +76,17 @@ func TestValidate(t *testing.T) {
 			pipe.Add(path)
 		}
 	}()
-	numResults := 0
+	var numResults int
 	for j := range pipe.Out() {
 		numResults++
+		if err := j.Err(); err != nil {
+			t.Error(err)
+			continue
+		}
 		got := j.SumString(checksum.MD5)
 		expected := testMD5Sums[j.Path()]
 		if got != expected {
 			t.Errorf(`expected %s, got %s for %s`, expected, got, j.Path())
-		}
-		if j.Info().Mode() != 0644 {
-			t.Error(`expected 0644 FileMode`)
 		}
 	}
 	if numResults != len(testMD5Sums) {

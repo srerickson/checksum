@@ -9,10 +9,10 @@ import (
 
 // Job is value streamed to/from Walk and Pool
 type Job struct {
-	path string            // path to file
-	algs map[string]Alg    // hash constructor function
-	sums map[string][]byte // checksum result
-	err  error             // any encountered errors
+	path string                      // path to file
+	algs map[string]func() hash.Hash // hash constructor function
+	sums map[string][]byte           // checksum result
+	err  error                       // any encountered errors
 	fs   fs.FS
 	info fs.FileInfo
 }

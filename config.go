@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"hash"
 	"runtime"
 )
 
@@ -22,7 +23,7 @@ const (
 type Config struct {
 	numGos int // number of goroutines in pool
 	ctx    context.Context
-	algs   map[string]Alg
+	algs   map[string]func() hash.Hash
 }
 
 func defaultConfig() Config {
@@ -51,10 +52,10 @@ func WithCtx(ctx context.Context) func(*Config) {
 }
 
 // WithAlg adds the named algorith to Walk() and NewPipe().
-func WithAlg(name string, alg Alg) func(*Config) {
+func WithAlg(name string, alg func() hash.Hash) func(*Config) {
 	return func(c *Config) {
 		if c.algs == nil {
-			c.algs = make(map[string]Alg)
+			c.algs = make(map[string]func() hash.Hash)
 		}
 		c.algs[name] = alg
 	}

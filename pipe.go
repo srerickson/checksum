@@ -16,13 +16,9 @@ package checksum
 
 import (
 	"errors"
-	"hash"
 	"io/fs"
 	"sync"
 )
-
-// Alg is a function that returns a hash.Hash
-type Alg func() hash.Hash
 
 // Pipe is a checksum worker pool. It has an input channel and an output channel.
 // Add jobs to the input channel with Add() and receive results with Out(). Typically

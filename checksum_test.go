@@ -3,7 +3,6 @@ package checksum_test
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 
@@ -100,7 +99,7 @@ func ExampleWalk() {
 	each := func(done checksum.Job, err error) {
 		if err != nil {
 			// handle error
-			log.Println(err)
+			// log.Println(err)
 			return
 		}
 		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {

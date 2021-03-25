@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"hash"
+	"io/fs"
 	"runtime"
 )
 
@@ -21,15 +22,17 @@ const (
 // Config is a common configuration object
 // used by Walk(), NewPipe(), and Add().
 type Config struct {
-	numGos int // number of goroutines in pool
-	ctx    context.Context
-	algs   map[string]func() hash.Hash
+	numGos      int // number of goroutines in pool
+	ctx         context.Context
+	algs        map[string]func() hash.Hash
+	walkDirFunc fs.WalkDirFunc
 }
 
 func defaultConfig() Config {
 	return Config{
-		numGos: runtime.GOMAXPROCS(0),
-		ctx:    context.Background(),
+		numGos:      runtime.GOMAXPROCS(0),
+		ctx:         context.Background(),
+		walkDirFunc: DefaultWalkDirFunc,
 	}
 }
 
@@ -87,5 +90,15 @@ func WithSHA256() func(*Config) {
 func WithSHA512() func(*Config) {
 	return func(c *Config) {
 		WithAlg(SHA512, sha512.New)(c)
+	}
+}
+
+// WithWalkDirFunc configures the WalkDirFunc use by Walk().
+// It behaves like fs.WalkDirFunc with the addition that
+// returning SkipFile causes the file to not be added to the
+// Pipe. Has no effect when used with NewPipe().
+func WithWalkDirFunc(f fs.WalkDirFunc) func(*Config) {
+	return func(c *Config) {
+		c.walkDirFunc = f
 	}
 }

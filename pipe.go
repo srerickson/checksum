@@ -43,11 +43,10 @@ type pipe struct {
 }
 
 // NewPipe returns a new Pipe scoped to fsys. The following functional options
-// are use to configre the Pipe:
-//  - With[Alg](): sets the checksum algorithm(s) used by the Pipe (REQUIRED)
-//  - WithCtx(): sets the Pipe's context. Default: context.Background().
-//  - WithNumGos(): sets the number of Job-processing go routines.
-//    Default: runtime.GOMAXPROCS(0)
+// are use to configre the Pipe (with defaults):
+//  - With[Alg](): Required
+//  - WithCtx(): context.Background().
+//  - WithNumGos():runtime.GOMAXPROCS(0)
 func NewPipe(fsys fs.FS, opts ...func(*Config)) (Pipe, error) {
 	pipe := &pipe{
 		fsys: fsys,

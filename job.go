@@ -66,27 +66,31 @@ func (j Job) Path() string {
 // Sum returns the checksum for the named algorithm. The package defines common
 // algorithm names (MD5, SHA256, etc.), otherwise name refers to the string
 // passed to WithAlg().
-func (j Job) Sum(name string) []byte {
+func (j Job) Sum(name string) ([]byte, error) {
 	if j.sums == nil || j.sums[name] == nil {
-		return nil
+		return nil, fmt.Errorf("checksum %s not found", name)
 	}
 	var s = make([]byte, len(j.sums[name]))
 	copy(s, j.sums[name])
-	return s
+	return s, nil
 }
 
 // SumString returns a string representation of the checksum for the named
 // algorithm. The package defines common algorithm names (MD5, SHA256, etc.),
 // otherwise name refers to the string passed to WithAlg().
-func (j Job) SumString(name string) string {
-	return hex.EncodeToString(j.Sum(name))
+func (j Job) SumString(name string) (string, error) {
+	s, err := j.Sum(name)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(s), nil
 }
 
 // Sums returns map of all checksum calculated by the job
 func (j Job) Sums() map[string][]byte {
 	ret := make(map[string][]byte)
 	for alg := range j.algs {
-		ret[alg] = j.Sum(alg)
+		ret[alg] = append(make([]byte, 0, len(j.sums[alg])), j.sums[alg]...)
 	}
 	return ret
 }

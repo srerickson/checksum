@@ -74,7 +74,10 @@ func TestValidate(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		shas[j.Path()] = j.SumString(checksum.SHA512)
+		shas[j.Path()], err = j.SumString(checksum.SHA512)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 	err := checksum.Walk(dir, `.`, each, checksum.WithSHA512())
@@ -103,8 +106,14 @@ func TestValidate(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		gotMD5 := j.SumString(checksum.MD5)
-		gotSHA := j.SumString(checksum.SHA512)
+		gotMD5, err := j.SumString(checksum.MD5)
+		if err != nil {
+			t.Error(err)
+		}
+		gotSHA, err := j.SumString(checksum.SHA512)
+		if err != nil {
+			t.Error(err)
+		}
 		wantSHA := shas[j.Path()]
 		wantMD5 := testMD5Sums[j.Path()]
 		if gotMD5 != wantMD5 {
@@ -124,7 +133,11 @@ func TestWalkErr(t *testing.T) {
 
 	// called for each complete job
 	each := func(done checksum.Job, err error) error {
-		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {
+		s, err := done.SumString(checksum.MD5)
+		if err != nil {
+			return err
+		}
+		if s == "e8c078f0e4ad79b16fcb618a3790c2df" {
 			return expectedErr
 		}
 		return nil
@@ -154,11 +167,10 @@ func TestWalkErr(t *testing.T) {
 func ExampleWalk() {
 	// called for each complete job
 	each := func(done checksum.Job, err error) error {
-		if err != nil {
-			return err
-		}
-		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {
-			fmt.Println(done.SumString(checksum.SHA1))
+		md5, err := done.SumString(checksum.MD5)
+		sha, err := done.SumString(checksum.SHA1)
+		if md5 == "e8c078f0e4ad79b16fcb618a3790c2df" {
+			fmt.Println(sha)
 		}
 		return nil
 	}

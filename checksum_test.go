@@ -161,7 +161,6 @@ func TestWalkErr(t *testing.T) {
 	if !errors.Is(walkErr.WalkDirErr, fs.ErrNotExist) {
 		t.Error(`errors.Is(walkErr.WalkDirErr, fs.ErrNotExist)`)
 	}
-
 }
 
 func ExampleWalk() {

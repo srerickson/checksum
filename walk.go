@@ -1,6 +1,7 @@
 package checksum
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"strings"
@@ -48,8 +49,19 @@ func DefaultWalkDirFunc(path string, d fs.DirEntry, err error) error {
 }
 
 func Walk(fsys fs.FS, root string, each JobFunc, opts ...func(*Config)) error {
-	p, err := NewPipe(fsys, opts...)
+	conf := defaultConfig()
+	for _, opt := range opts {
+		opt(&conf)
+	}
+	// this cancel is used if each() returns an error for a job.
+	// The cancel causes additional calls to Add() to retun
+	// an error
+	var cancel context.CancelFunc
+	conf.ctx, cancel = context.WithCancel(conf.ctx)
+
+	p, err := NewPipe(fsys, withConfig(&conf))
 	if err != nil {
+		cancel()
 		return err
 	}
 	pip, _ := (p).(*pipe) // for walkDirFunc
@@ -74,14 +86,19 @@ func Walk(fsys fs.FS, root string, each JobFunc, opts ...func(*Config)) error {
 	for complete := range pip.Out() {
 		if jobFuncErr == nil {
 			jobFuncErr = each(complete, complete.Err())
+			if jobFuncErr != nil {
+				cancel()
+			}
 		}
 	}
 	walkErr := <-walkErrChan
 	if jobFuncErr != nil || walkErr != nil {
+		cancel()
 		return &WalkErr{
 			WalkDirErr: walkErr,
 			JobFuncErr: jobFuncErr,
 		}
 	}
+	cancel()
 	return nil
 }

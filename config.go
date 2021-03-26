@@ -36,6 +36,14 @@ func defaultConfig() Config {
 	}
 }
 
+// withConfig is used internally to set the whole
+// config object if necessary
+func withConfig(newC *Config) func(c *Config) {
+	return func(oldC *Config) {
+		*oldC = *newC
+	}
+}
+
 // WithGos is used set the number of goroutines used by a Pipe.
 // Used as an optional argument for NewPipe().
 func WithGos(n int) func(*Config) {

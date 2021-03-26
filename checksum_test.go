@@ -3,6 +3,7 @@ package checksum_test
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"testing"
 
@@ -65,7 +66,25 @@ func TestPipeErr(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	dir := os.DirFS(`.`)
-	pipe, err := checksum.NewPipe(dir, checksum.WithGos(3), checksum.WithMD5())
+
+	// map of file sha512 from walk
+	shas := make(map[string]string)
+	each := func(j checksum.Job, err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		shas[j.Path()] = j.SumString(checksum.SHA512)
+	}
+	err := checksum.Walk(dir, `.`, each, checksum.WithSHA512())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// a pipe with multiple checksums
+	pipe, err := checksum.NewPipe(dir,
+		checksum.WithGos(3),
+		checksum.WithMD5(),
+		checksum.WithSHA512())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,16 +101,20 @@ func TestValidate(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		got := j.SumString(checksum.MD5)
-		expected := testMD5Sums[j.Path()]
-		if got != expected {
-			t.Errorf(`expected %s, got %s for %s`, expected, got, j.Path())
+		gotMD5 := j.SumString(checksum.MD5)
+		gotSHA := j.SumString(checksum.SHA512)
+		wantSHA := shas[j.Path()]
+		wantMD5 := testMD5Sums[j.Path()]
+		if gotMD5 != wantMD5 {
+			t.Errorf(`expected MD5 %s, got %s for %s`, wantMD5, gotMD5, j.Path())
+		}
+		if gotSHA != wantSHA {
+			t.Errorf(`expected SHA512 %s, got %s for %s`, wantSHA, gotSHA, j.Path())
 		}
 	}
 	if numResults != len(testMD5Sums) {
 		t.Errorf("expected %d results, got %d", len(testMD5Sums), numResults)
 	}
-
 }
 
 func ExampleWalk() {
@@ -99,7 +122,7 @@ func ExampleWalk() {
 	each := func(done checksum.Job, err error) {
 		if err != nil {
 			// handle error
-			// log.Println(err)
+			log.Fatal(err)
 			return
 		}
 		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {

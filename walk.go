@@ -11,7 +11,7 @@ type JobFunc func(Job, error)
 
 // SkipFile is an error returned by a WalkDirFunc to signal that the item in the
 // path should not be added to the Pipe
-var SkipFile error
+var ErrSkipFile = errors.New(`skip file`)
 
 // DefaultWalkDirFunc is the defult WalkDirFunc used by Walk. It only adds
 // regular files to the Pipe.
@@ -21,7 +21,7 @@ func DefaultWalkDirFunc(path string, d fs.DirEntry, err error) error {
 	}
 	if !d.Type().IsRegular() {
 		// don't checksum
-		return SkipFile
+		return ErrSkipFile
 	}
 	return nil
 }
@@ -38,7 +38,7 @@ func Walk(fsys fs.FS, root string, each JobFunc, opts ...func(*Config)) error {
 		defer close(walkErr)
 		walk := func(path string, d fs.DirEntry, e error) error {
 			if err := pip.conf.walkDirFunc(path, d, e); err != nil {
-				if errors.Is(err, SkipFile) {
+				if err == ErrSkipFile {
 					return nil // continue walk but no checksum
 				}
 				return err

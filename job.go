@@ -82,6 +82,15 @@ func (j Job) SumString(name string) string {
 	return hex.EncodeToString(j.Sum(name))
 }
 
+// Sums returns map of all checksum calculated by the job
+func (j Job) Sums() map[string][]byte {
+	ret := make(map[string][]byte)
+	for alg := range j.algs {
+		ret[alg] = j.Sum(alg)
+	}
+	return ret
+}
+
 // Err returns any errors from the Job
 func (j Job) Err() error {
 	return j.err

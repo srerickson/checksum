@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"testing"
 
@@ -130,7 +131,6 @@ func TestWalkErr(t *testing.T) {
 	}
 	err := checksum.Walk(os.DirFS("test/fixture"), ".",
 		each, checksum.WithMD5())
-
 	walkErr, ok := err.(*checksum.WalkErr)
 	if !ok {
 		t.Error(`expected checksum.WalkErr`)
@@ -138,6 +138,17 @@ func TestWalkErr(t *testing.T) {
 	if walkErr.JobFuncErr != expectedErr {
 		t.Error(`expected  walkErr.JobErr == expectedErr`)
 	}
+
+	err = checksum.Walk(os.DirFS("test/fixture"), "NOPLACE",
+		each, checksum.WithSHA1())
+	walkErr, ok = err.(*checksum.WalkErr)
+	if !ok {
+		t.Error(`expected checksum.WalkErr`)
+	}
+	if !errors.Is(walkErr.WalkDirErr, fs.ErrNotExist) {
+		t.Error(`errors.Is(walkErr.WalkDirErr, fs.ErrNotExist)`)
+	}
+
 }
 
 func ExampleWalk() {

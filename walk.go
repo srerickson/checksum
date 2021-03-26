@@ -2,8 +2,8 @@ package checksum
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
+	"strings"
 )
 
 // JobFunc is a function called for each complete job by Walk(). The funciton is
@@ -20,7 +20,14 @@ type WalkErr struct {
 
 // Error implements error interface for WalkErr
 func (we *WalkErr) Error() string {
-	return fmt.Sprintf(`WalkDirErr: %s; JobErr: %s`, we.WalkDirErr.Error(), we.JobFuncErr.Error())
+	var m []string
+	if we.WalkDirErr != nil {
+		m = append(m, we.WalkDirErr.Error())
+	}
+	if we.JobFuncErr != nil {
+		m = append(m, we.JobFuncErr.Error())
+	}
+	return strings.Join(m, `; `)
 }
 
 // SkipFile is an error returned by a WalkDirFunc to signal that the item in the

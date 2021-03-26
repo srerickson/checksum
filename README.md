@@ -34,7 +34,7 @@ func main() {
 	duplicates := make(map[string][]string)
 	each := func(j checksum.Job, err error) error {
 		// Callback function called for each complete job.
-		// Returning prevents future calls to each().
+		// Returning error prevents future calls to each().
 		if err != nil {
 			return err
 		}

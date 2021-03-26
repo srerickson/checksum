@@ -2,8 +2,8 @@ package checksum_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 
@@ -69,11 +69,12 @@ func TestValidate(t *testing.T) {
 
 	// map of file sha512 from walk
 	shas := make(map[string]string)
-	each := func(j checksum.Job, err error) {
+	each := func(j checksum.Job, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		shas[j.Path()] = j.SumString(checksum.SHA512)
+		return nil
 	}
 	err := checksum.Walk(dir, `.`, each, checksum.WithSHA512())
 	if err != nil {
@@ -117,17 +118,38 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestWalkErr(t *testing.T) {
+	expectedErr := errors.New(`stop`)
+
+	// called for each complete job
+	each := func(done checksum.Job, err error) error {
+		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {
+			return expectedErr
+		}
+		return nil
+	}
+	err := checksum.Walk(os.DirFS("test/fixture"), ".",
+		each, checksum.WithMD5())
+
+	walkErr, ok := err.(*checksum.WalkErr)
+	if !ok {
+		t.Error(`expected checksum.WalkErr`)
+	}
+	if walkErr.JobFuncErr != expectedErr {
+		t.Error(`expected  walkErr.JobErr == expectedErr`)
+	}
+}
+
 func ExampleWalk() {
 	// called for each complete job
-	each := func(done checksum.Job, err error) {
+	each := func(done checksum.Job, err error) error {
 		if err != nil {
-			// handle error
-			log.Fatal(err)
-			return
+			return err
 		}
 		if done.SumString(checksum.MD5) == "e8c078f0e4ad79b16fcb618a3790c2df" {
 			fmt.Println(done.SumString(checksum.SHA1))
 		}
+		return nil
 	}
 	err := checksum.Walk(os.DirFS("test/fixture"), ".", each,
 		checksum.WithGos(5), // 5 go routines

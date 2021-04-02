@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 )
 
+// A Delta represents changes between two sets of files
 type Delta struct {
 	// map of all the filenames and their corresponding
 	// digests
@@ -34,7 +35,8 @@ type names struct {
 // a Fileset maps filnames to digests
 type FileSet map[string]string
 
-func Diff(v1 FileSet, v2 FileSet) *Delta {
+// New returns a new Delta based on changes between v1 and v2
+func New(v1 FileSet, v2 FileSet) *Delta {
 	var delta Delta
 	delta.allNames = make(map[string]*digests)
 	delta.addDel = make(map[string]*names)
@@ -72,7 +74,7 @@ func Diff(v1 FileSet, v2 FileSet) *Delta {
 
 // returns list of files in v2 not in v1
 func (d *Delta) Added() []string {
-	added := []string{}
+	var added []string
 	for _, cd := range d.addDel {
 		if len(cd.v2) > len(cd.v1) {
 			added = append(added, cd.v2[len(cd.v1):]...)
@@ -83,7 +85,7 @@ func (d *Delta) Added() []string {
 
 // Removed returns list of files from v1 removed in v2
 func (d *Delta) Removed() []string {
-	rem := []string{}
+	var rem []string
 	for _, cd := range d.addDel {
 		if len(cd.v1) > len(cd.v2) {
 			rem = append(rem, cd.v1[len(cd.v2):]...)
@@ -123,4 +125,19 @@ func (d *Delta) Modified() []string {
 		}
 	}
 	return mods
+}
+
+// Same returns list of files that are the same
+// between v1 and v2s
+func (d *Delta) Same() []string {
+	var same []string
+	for f, digs := range d.allNames {
+		if digs.v1 == "" || digs.v2 == "" {
+			continue
+		}
+		if digs.v1 == digs.v2 {
+			same = append(same, f)
+		}
+	}
+	return same
 }

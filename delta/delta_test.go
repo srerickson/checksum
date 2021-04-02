@@ -1,6 +1,7 @@
 package delta_test
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -24,8 +25,9 @@ func TestDelta(t *testing.T) {
 		"h1": "hij",  // no change
 		"h2": "qrs-", // modified
 	}
-	d := delta.Diff(v1, v2)
+	d := delta.New(v1, v2)
 	added := d.Added()
+	sort.StringSlice(added).Sort()
 	if len(added) != 2 {
 		t.Error(`expected 2 additions`)
 	}
@@ -44,7 +46,13 @@ func TestDelta(t *testing.T) {
 		t.Error(`expected 1 renamed file called "f1-"`)
 	}
 	mods := d.Modified()
-	if len(mods) != 2 || mods[1] != "h2" {
+	sort.StringSlice(mods).Sort()
+	if len(mods) != 2 || mods[0] != "f3" {
 		t.Errorf(`expected 2 modified files but got %d: %s`, len(mods), strings.Join(mods, ", "))
+	}
+
+	same := d.Same()
+	if len(same) != 1 || same[0] != "h1" {
+		t.Errorf(`expected 1 unchanged file but got %d: %s`, len(same), strings.Join(same, ", "))
 	}
 }

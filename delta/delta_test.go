@@ -50,9 +50,23 @@ func TestDelta(t *testing.T) {
 	if len(mods) != 2 || mods[0] != "f3" {
 		t.Errorf(`expected 2 modified files but got %d: %s`, len(mods), strings.Join(mods, ", "))
 	}
-
 	same := d.Same()
 	if len(same) != 1 || same[0] != "h1" {
 		t.Errorf(`expected 1 unchanged file but got %d: %s`, len(same), strings.Join(same, ", "))
 	}
+	newDigs := d.NewDigests()
+	if len(newDigs) != 4 {
+		t.Errorf(`expected NewDigests() to return 4 digests but got %d`, len(newDigs))
+	}
+	if len(newDigs["qrs-"]) == 0 || newDigs["qrs-"][0] != "h2" {
+		t.Error(`expected NewDigests() to return entry for "qrs-" -> h2, but it didn't`)
+	}
+	if len(newDigs["abc"]) != 0 {
+		t.Error(`expected NewDigests() to not return entry for "abc" but it did`)
+	}
+	remDigs := d.RemovedDigests()
+	if len(remDigs) != 2 || len(remDigs["qrs"]) != 1 || len(remDigs["cde"]) != 1 {
+		t.Errorf(`expected RemovedDigests() to return ["qrs","cde"] but got %v`, remDigs)
+	}
+
 }

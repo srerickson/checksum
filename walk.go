@@ -64,26 +64,25 @@ func Walk(fsys fs.FS, root string, each JobFunc, opts ...func(*Config)) error {
 		cancel()
 		return err
 	}
-	pip, _ := (p).(*pipe) // for walkDirFunc
 	walkErrChan := make(chan error, 1)
 	go func() {
-		defer pip.Close()
+		defer p.Close()
 		defer close(walkErrChan)
 		walk := func(path string, d fs.DirEntry, e error) error {
-			if err := pip.conf.walkDirFunc(path, d, e); err != nil {
+			if err := p.conf.walkDirFunc(path, d, e); err != nil {
 				if err == ErrSkipFile {
 					return nil // continue walk but no checksum
 				}
 				return err
 			}
-			return pip.Add(path)
+			return p.Add(path)
 		}
 		walkErrChan <- fs.WalkDir(fsys, root, walk)
 	}()
 
 	// process job callbacks and capture errors
 	var jobFuncErr error
-	for complete := range pip.Out() {
+	for complete := range p.Out() {
 		if jobFuncErr == nil {
 			jobFuncErr = each(complete, complete.Err())
 			if jobFuncErr != nil {

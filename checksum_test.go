@@ -128,11 +128,47 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestJobAlgs(t *testing.T) {
+	dir := os.DirFS(`.`)
+	pipe, err := checksum.NewPipe(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer pipe.Close()
+		for path := range testMD5Sums {
+			err := pipe.Add(path, checksum.WithMD5())
+			if err == nil {
+				break
+			}
+		}
+	}()
+	var numResults int
+	for j := range pipe.Out() {
+		numResults++
+		if err := j.Err(); err != nil {
+			t.Error(err)
+			continue
+		}
+		gotMD5, err := j.SumString(checksum.MD5)
+		if err != nil {
+			t.Error(err)
+		}
+		wantMD5 := testMD5Sums[j.Path()]
+		if gotMD5 != wantMD5 {
+			t.Errorf(`expected MD5 %s, got %s for %s`, wantMD5, gotMD5, j.Path())
+		}
+	}
+}
+
 func TestWalkErr(t *testing.T) {
 	expectedErr := errors.New(`stop`)
 
 	// called for each complete job
 	each := func(done checksum.Job, err error) error {
+		if err != nil {
+			return err
+		}
 		s, err := done.SumString(checksum.MD5)
 		if err != nil {
 			return err
@@ -166,6 +202,9 @@ func TestWalkErr(t *testing.T) {
 func ExampleWalk() {
 	// called for each complete job
 	each := func(done checksum.Job, err error) error {
+		if err != nil {
+			return err
+		}
 		md5, err := done.SumString(checksum.MD5)
 		sha, err := done.SumString(checksum.SHA1)
 		if md5 == "e8c078f0e4ad79b16fcb618a3790c2df" {

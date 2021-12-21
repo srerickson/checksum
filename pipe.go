@@ -29,13 +29,7 @@ import (
 //
 // The Close() method must be called to properly free resource of Pipes created
 // with NewPipe.
-type Pipe interface {
-	Add(string) error
-	Out() <-chan Job
-	Close()
-}
-
-type pipe struct {
+type Pipe struct {
 	conf Config   // common config options
 	fsys fs.FS    // the pipe's jobs are scoped to the fs
 	in   chan Job // jop input
@@ -47,8 +41,8 @@ type pipe struct {
 //  - With[Alg](): Required
 //  - WithCtx(): context.Background().
 //  - WithNumGos():runtime.GOMAXPROCS(0)
-func NewPipe(fsys fs.FS, opts ...func(*Config)) (Pipe, error) {
-	pipe := &pipe{
+func NewPipe(fsys fs.FS, opts ...func(*Config)) (*Pipe, error) {
+	pipe := &Pipe{
 		fsys: fsys,
 		in:   make(chan Job),
 		out:  make(chan Job),
@@ -56,9 +50,6 @@ func NewPipe(fsys fs.FS, opts ...func(*Config)) (Pipe, error) {
 	}
 	for _, option := range opts {
 		option(&pipe.conf)
-	}
-	if len(pipe.conf.algs) == 0 {
-		return nil, errors.New(`checksum algorithms not defined`)
 	}
 
 	var wg sync.WaitGroup
@@ -85,22 +76,35 @@ func NewPipe(fsys fs.FS, opts ...func(*Config)) (Pipe, error) {
 }
 
 // Out returns the Pipe's recieve-only channel of Job results
-func (p *pipe) Out() <-chan Job {
+func (p *Pipe) Out() <-chan Job {
 	return p.out
 }
 
 // Close frees the resources used by the Pipe. Calling Add() after Close() will
 // cause a panic.
-func (p *pipe) Close() {
+func (p *Pipe) Close() {
 	close(p.in)
 }
 
 // Add adds a checksum job for path to the Pipe. The path is evaluated in the
-// context of the Pipe's fs.FS. It returns an error if the Pipe context is
-// canceled and the job is not created. It causes a panic if called after
-// Close(). To avoid deadlocks, Add should be called in a separate go routine
-// than Out().
-func (p *pipe) Add(path string) error {
+// context of the Pipe's fs.FS. Optional arguments may be used to specify the
+// hash algorithms the job should use (these options supercede options to
+// NewPipe). It returns an error if the Pipe context is canceled or if no hash
+// algorithms are defined for the Pipe or the Job. In both cases, the job is
+// not created. It causes a panic if called after Close(). To avoid deadlocks,
+// Add should be called in a separate go routine than Out().
+func (p *Pipe) Add(path string, opts ...func(*Config)) error {
+	var conf Config
+	jobAlgs := p.conf.algs
+	for _, option := range opts {
+		option(&conf)
+	}
+	if conf.algs != nil {
+		jobAlgs = conf.algs
+	}
+	if jobAlgs == nil {
+		return errors.New(`checksum aglorithm not set`)
+	}
 	select {
 	case <-p.conf.ctx.Done():
 		return p.conf.ctx.Err()
@@ -108,8 +112,9 @@ func (p *pipe) Add(path string) error {
 		p.in <- Job{
 			path: path,
 			fs:   p.fsys,
-			algs: p.conf.algs,
+			algs: jobAlgs,
 		}
 	}
 	return nil
+
 }
